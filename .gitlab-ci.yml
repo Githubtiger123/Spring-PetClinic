@@ -1,12 +1,17 @@
 stages:
   - build
   - test
+  - package
 
 variables:
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dmaven.artifact.threads=16"
   MAVEN_CLI_OPTS: "--batch-mode --no-transfer-progress --errors --fail-at-end -Dcheckstyle.skip=true -Dspring-javaformat.skip=true -s $CI_PROJECT_DIR/ci/settings.xml"
+  # kaniko 构建器镜像，国内拉不动 gcr.io 时改成本地 Harbor 里的镜像
+  KANIKO_IMAGE: "gcr.io/kaniko-project/executor:v1.23.2-debug"
+  # 内置 Registry 走 http 时保持 true；是 https 就删掉这个变量
+  KANIKO_INSECURE: "true"
 
-default:
+.maven:
   tags:
     - k8s
   image: maven:3.9-eclipse-temurin-17
@@ -19,6 +24,7 @@ default:
     - mvn -version
 
 compile:
+  extends: .maven
   stage: build
   script:
     - mvn $MAVEN_CLI_OPTS -DskipTests compile
@@ -28,6 +34,7 @@ compile:
     expire_in: 1 hour
 
 unit-test:
+  extends: .maven
   stage: test
   needs:
     - compile
@@ -41,3 +48,30 @@ unit-test:
     paths:
       - target/surefire-reports/
     expire_in: 1 week
+
+build-image:
+  stage: package
+  tags:
+    - k8s
+  needs:
+    - unit-test
+  image:
+    name: $KANIKO_IMAGE
+    entrypoint: [""]
+  before_script: []
+  script:
+    - mkdir -p /kaniko/.docker
+    - |
+      AUTH=$(printf '%s:%s' "gitlab-ci-token" "$CI_JOB_TOKEN" | base64 | tr -d '\n')
+      printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
+    - |
+      EXTRA=""
+      if [ "$KANIKO_INSECURE" = "true" ]; then EXTRA="--insecure --insecure-pull"; fi
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR" \
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile" \
+        --destination "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" \
+        --destination "$CI_REGISTRY_IMAGE:latest" \
+        $EXTRA
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_REGISTRY_IMAGE'

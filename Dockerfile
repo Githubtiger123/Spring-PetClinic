@@ -1,20 +1,15 @@
-# Use an official Maven image as the base image
-FROM eclipse-temurin:17-jdk-jammy AS build
-# Set the working directory in the container
+# ---- build stage ----
+FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /app
-# Copy the project files to the container
-ADD . .
-# Build the application using Maven
-RUN ./mvnw package
-# RUN --mount=type=cache,target=/root/.m2 ./mvnw -f pom.xml clean package
+COPY ci/settings.xml /tmp/settings.xml
+COPY . .
+RUN mvn -B --no-transfer-progress -s /tmp/settings.xml \
+      -DskipTests -Dcheckstyle.skip=true -Dspring-javaformat.skip=true \
+      package
 
-# Use an official OpenJDK image as the base image
-FROM openjdk:23-ea-5-jdk-slim-bookworm
-
-# FROM alpine:3.19.0
-# Set the working directory in the container
+# ---- runtime stage ----
+FROM eclipse-temurin:17-jre
 WORKDIR /app
-# Copy the built JAR file from the previous stage to the container
-COPY --from=build /app/target/*.jar .
-# Set the command to run the application
-CMD ["java", "-jar", "/app/spring-petclinic-3.2.0-SNAPSHOT.jar"]
+COPY --from=build /app/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app.jar"]

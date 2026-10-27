@@ -1,0 +1,7 @@
+.git
+.gitlab-ci.yml
+.idea
+.m2
+target
+*.iml
+README.md
