@@ -33,14 +33,14 @@ variables:
     - java -version
     - mvn -version
 
-compile:
+build-app:
   extends: .maven
   stage: build
   script:
-    - mvn $MAVEN_CLI_OPTS -DskipTests compile
+    - mvn $MAVEN_CLI_OPTS -DskipTests package
   artifacts:
     paths:
-      - target/classes/
+      - target/*.jar
     expire_in: 1 hour
 
 # 临时注释：测试步骤先跳过，等整条链路跑通后再打开
@@ -48,7 +48,7 @@ compile:
 #   extends: .maven
 #   stage: test
 #   needs:
-#     - compile
+#     - build-app
 #   script:
 #     - mvn $MAVEN_CLI_OPTS test
 #   artifacts:
@@ -65,7 +65,7 @@ build-image:
   tags:
     - k8s
   needs:
-    - compile
+    - build-app
   image:
     name: $KANIKO_IMAGE
     entrypoint: [""]

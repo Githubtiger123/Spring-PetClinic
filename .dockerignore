@@ -2,6 +2,12 @@
 .gitlab-ci.yml
 .idea
 .m2
-target
 *.iml
 README.md
+target/classes
+target/test-classes
+target/surefire-reports
+target/failsafe-reports
+target/generated-sources
+target/generated-test-sources
+target/maven-status
