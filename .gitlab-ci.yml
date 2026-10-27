@@ -1,35 +1,43 @@
 stages:
   - build
-  
-build:
-  stage: build
+  - test
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  MAVEN_CLI_OPTS: "--batch-mode --no-transfer-progress --errors --fail-at-end"
+
+default:
   tags:
     - k8s
-  image: docker
-  variables:
-    DOCKER_HOST: "tcp://docker:2375"
-  services:
-    - name: docker:dind
-      alias: docker
-      command: [ "dockerd", "-H", "tcp://0.0.0.0:2375", "--tls=false", "--insecure-registry=YOUR_REGISTRY_URL"]
+  image: maven:3.9-eclipse-temurin-17
+  cache:
+    key: "maven-$CI_COMMIT_REF_SLUG"
+    paths:
+      - .m2/repository
   before_script:
-    - apk add git
-    - git config --global user.email $GITLAB_USER_EMAIL
-    - git config --global user.name $GITLAB_USER_NAME
-    - git config http.sslVerify false
-    - docker login -u "gitlab-ci-token" -p $CI_JOB_TOKEN $CI_REGISTRY
-  script:
-    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA .
-    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-  after_script:
-    - git checkout $CI_COMMIT_BRANCH
-    - CI_IMAGE_REGISTRY_NAME_TAG=$(echo $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA | sed 's/\//\\\//g')
-    - STRING="image:"
-    - sed -i "s/$STRING .*/$STRING $CI_IMAGE_REGISTRY_NAME_TAG/"  kustomize/deployment.yml
-    - git add . 
-    - git commit -m "update image tag"
-    - git push "https://${GITLAB_USER_LOGIN}:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" -o ci.skip
+    - java -version
+    - mvn -version
 
-  except:
-    changes:
-      - kustomize/*
+compile:
+  stage: build
+  script:
+    - mvn $MAVEN_CLI_OPTS -DskipTests compile
+  artifacts:
+    paths:
+      - target/classes/
+    expire_in: 1 hour
+
+unit-test:
+  stage: test
+  needs:
+    - compile
+  script:
+    - mvn $MAVEN_CLI_OPTS test
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+    paths:
+      - target/surefire-reports/
+    expire_in: 1 week
