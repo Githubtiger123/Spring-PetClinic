@@ -2,6 +2,9 @@ stages:
   - build
   
 build:
+  stage: build
+  tags:
+    - K8S
   image: docker
   variables:
     DOCKER_HOST: "tcp://docker:2375"
@@ -9,7 +12,6 @@ build:
     - name: docker:dind
       alias: docker
       command: [ "dockerd", "-H", "tcp://0.0.0.0:2375", "--tls=false", "--insecure-registry=YOUR_REGISTRY_URL"]
-  stage: build
   before_script:
     - apk add git
     - git config --global user.email $GITLAB_USER_EMAIL
