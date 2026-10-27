@@ -43,29 +43,28 @@ build-app:
       - target/*.jar
     expire_in: 1 hour
 
-# 临时注释：测试步骤先跳过，等整条链路跑通后再打开
-# unit-test:
-#   extends: .maven
-#   stage: test
-#   needs:
-#     - build-app
-#   script:
-#     - mvn $MAVEN_CLI_OPTS test
-#   artifacts:
-#     when: always
-#     reports:
-#       junit:
-#         - target/surefire-reports/TEST-*.xml
-#     paths:
-#       - target/surefire-reports/
-#     expire_in: 1 week
+unit-test:
+  extends: .maven
+  stage: test
+  needs:
+    - build-app
+  script:
+    - mvn $MAVEN_CLI_OPTS test
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+    paths:
+      - target/surefire-reports/
+    expire_in: 1 week
 
 build-image:
   stage: package
   tags:
     - k8s
   needs:
-    - build-app
+    - unit-test
   image:
     name: $KANIKO_IMAGE
     entrypoint: [""]
