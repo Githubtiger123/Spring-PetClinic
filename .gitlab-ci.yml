@@ -98,9 +98,19 @@ deploy-app:
   environment:
     name: app-dev
   script:
-    - mkdir -p ~/.kube
-    - echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
-    - chmod 600 ~/.kube/config
+    # KUBE_CONFIG 支持两种形式：变量类型选 File（值是文件路径）或变量类型 Variable（值是 base64）
+    - |
+      if [ -f "$KUBE_CONFIG" ]; then
+        export KUBECONFIG="$KUBE_CONFIG"
+        echo "using kubeconfig file: $KUBECONFIG"
+      else
+        mkdir -p ~/.kube
+        printf '%s' "$KUBE_CONFIG" | tr -d '\r\n' | base64 -d > ~/.kube/config
+        export KUBECONFIG=~/.kube/config
+        chmod 600 ~/.kube/config
+        echo "using decoded kubeconfig: $KUBECONFIG"
+      fi
+    - kubectl config get-contexts
     - kubectl version --client
     # 命名空间、数据库、Service 都在清单里
     - kubectl apply -f k8s/app-dev.yml
