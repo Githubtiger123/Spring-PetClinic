@@ -102,17 +102,8 @@ deploy-app:
     - echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
     - chmod 600 ~/.kube/config
     - kubectl version --client
-    - kubectl get ns "$K8S_NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$K8S_NAMESPACE"
-    - kubectl -n "$K8S_NAMESPACE" apply -f k8s/
-    # Harbor 私有项目需要拉取凭据
-    - |
-      kubectl -n "$K8S_NAMESPACE" create secret docker-registry harbor-pull \
-        --docker-server="$HARBOR_REGISTRY" \
-        --docker-username="$HARBOR_USERNAME" \
-        --docker-password="$HARBOR_PASSWORD" \
-        --dry-run=client -o yaml | kubectl -n "$K8S_NAMESPACE" apply -f -
-      kubectl -n "$K8S_NAMESPACE" patch deployment "$K8S_DEPLOYMENT" --type merge \
-        -p '{"spec":{"template":{"spec":{"imagePullSecrets":[{"name":"harbor-pull"}]}}}}'
+    # 命名空间、数据库、Service 都在清单里
+    - kubectl apply -f k8s/app-dev.yml
     # 换成本次构建的镜像
     - kubectl -n "$K8S_NAMESPACE" set image "deployment/$K8S_DEPLOYMENT" "$K8S_CONTAINER=$HARBOR_IMAGE:$CI_COMMIT_SHORT_SHA"
     - kubectl -n "$K8S_NAMESPACE" rollout status "deployment/$K8S_DEPLOYMENT" --timeout=300s

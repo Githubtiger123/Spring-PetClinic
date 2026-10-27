@@ -1,0 +1,161 @@
+# app-dev 环境的完整部署清单
+# 使用方式: kubectl apply -f k8s/app-dev.yml
+# 镜像拉取凭据 harbor-pull 需提前在该命名空间创建（不在本文件管理）
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-dev
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-db
+  namespace: app-dev
+type: servicebinding.io/postgresql
+stringData:
+  type: "postgresql"
+  provider: "postgresql"
+  host: "demo-db"
+  port: "5432"
+  database: "petclinic"
+  username: "user"
+  password: "pass"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-db
+  namespace: app-dev
+  labels:
+    app: demo-db
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: demo-db
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-db
+  namespace: app-dev
+  labels:
+    app: demo-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-db
+  template:
+    metadata:
+      labels:
+        app: demo-db
+    spec:
+      containers:
+        - name: postgresql
+          image: postgres:18.4
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: demo-db
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: demo-db
+                  key: password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: demo-db
+                  key: database
+          ports:
+            - containerPort: 5432
+              name: postgresql
+          livenessProbe:
+            tcpSocket:
+              port: postgresql
+          readinessProbe:
+            tcpSocket:
+              port: postgresql
+          startupProbe:
+            tcpSocket:
+              port: postgresql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: petclinic
+  namespace: app-dev
+  labels:
+    app: petclinic
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: petclinic
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petclinic
+  namespace: app-dev
+  labels:
+    app: petclinic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: petclinic
+  template:
+    metadata:
+      labels:
+        app: petclinic
+    spec:
+      imagePullSecrets:
+        - name: harbor-pull
+      containers:
+        - name: workload
+          # CI 会用 kubectl set image 覆盖成具体的 commit tag
+          image: 10.60.78.61:30003/interrogation-services/spring-petclinic:latest
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: postgres
+            - name: SERVICE_BINDING_ROOT
+              value: /bindings
+            - name: SPRING_APPLICATION_JSON
+              value: |
+                {
+                  "management.endpoint.health.probes.add-additional-paths": true
+                }
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          volumeMounts:
+            - mountPath: /bindings/secret
+              name: binding
+              readOnly: true
+      volumes:
+        - name: binding
+          projected:
+            sources:
+              - secret:
+                  name: demo-db
