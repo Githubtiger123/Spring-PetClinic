@@ -2,20 +2,18 @@ stages:
   - build
   - test
   - package
-  - publish
 
 variables:
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dmaven.artifact.threads=16"
   MAVEN_CLI_OPTS: "--batch-mode --no-transfer-progress --errors --fail-at-end -Dcheckstyle.skip=true -Dspring-javaformat.skip=true -s $CI_PROJECT_DIR/ci/settings.xml"
   # kaniko 构建器镜像，国内拉不动 gcr.io 时改成本地 Harbor 里的镜像
   KANIKO_IMAGE: "gcr.io/kaniko-project/executor:v1.23.2-debug"
-  # 内置 Registry 走 http 时保持 true；是 https 就改成 false
-  KANIKO_INSECURE: "true"
+  # Harbor 是自签证书 https 时保留下面两个跳过校验的参数；证书可信就把它置空
+  KANIKO_EXTRA_ARGS: "--skip-tls-verify --skip-tls-verify-pull"
   # 目标 Harbor（可用项目 CI/CD 变量覆盖，UI 变量优先级更高）
-  HARBOR_REGISTRY: "registry.nebula-west.k8s.lab"
-  HARBOR_PROJECT: "morrism"
+  HARBOR_REGISTRY: "10.60.78.61:30003"
+  HARBOR_PROJECT: "interrogation-services"
   HARBOR_IMAGE: "$HARBOR_REGISTRY/$HARBOR_PROJECT/spring-petclinic"
-  SKOPEO_IMAGE: "quay.io/skopeo/stable:v1.16.1"
 
 .maven:
   tags:
@@ -68,41 +66,14 @@ build-image:
   script:
     - mkdir -p /kaniko/.docker
     - |
-      AUTH=$(printf '%s:%s' "gitlab-ci-token" "$CI_JOB_TOKEN" | base64 | tr -d '\n')
-      printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
+      AUTH=$(printf '%s:%s' "$HARBOR_USERNAME" "$HARBOR_PASSWORD" | base64 | tr -d '\n')
+      printf '{"auths":{"%s":{"auth":"%s"}}}' "$HARBOR_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
     - |
-      EXTRA=""
-      if [ "$KANIKO_INSECURE" = "true" ]; then EXTRA="--insecure --insecure-pull"; fi
       /kaniko/executor \
         --context "$CI_PROJECT_DIR" \
         --dockerfile "$CI_PROJECT_DIR/Dockerfile" \
-        --destination "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" \
-        --destination "$CI_REGISTRY_IMAGE:latest" \
-        $EXTRA
+        --destination "$HARBOR_IMAGE:$CI_COMMIT_SHORT_SHA" \
+        --destination "$HARBOR_IMAGE:latest" \
+        $KANIKO_EXTRA_ARGS
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" && $CI_REGISTRY_IMAGE'
-
-push-harbor:
-  stage: publish
-  tags:
-    - k8s
-  needs:
-    - build-image
-  image:
-    name: $SKOPEO_IMAGE
-    entrypoint: [""]
-  before_script: []
-  script:
-    - |
-      for TAG in "$CI_COMMIT_SHORT_SHA" latest; do
-        echo "==> copy $CI_REGISTRY_IMAGE:$TAG -> $HARBOR_IMAGE:$TAG"
-        skopeo copy --retry-times 3 \
-          --src-creds "gitlab-ci-token:$CI_JOB_TOKEN" \
-          --src-tls-verify=false \
-          --dest-creds "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
-          --dest-tls-verify=false \
-          "docker://$CI_REGISTRY_IMAGE:$TAG" \
-          "docker://$HARBOR_IMAGE:$TAG"
-      done
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main" && $HARBOR_PASSWORD'
+    - if: '$CI_COMMIT_BRANCH == "main"'
