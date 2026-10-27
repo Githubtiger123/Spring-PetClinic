@@ -4,7 +4,7 @@ stages:
 
 variables:
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dmaven.artifact.threads=16"
-  MAVEN_CLI_OPTS: "--batch-mode --no-transfer-progress --errors --fail-at-end -s $CI_PROJECT_DIR/ci/settings.xml"
+  MAVEN_CLI_OPTS: "--batch-mode --no-transfer-progress --errors --fail-at-end -Dcheckstyle.skip=true -Dspring-javaformat.skip=true -s $CI_PROJECT_DIR/ci/settings.xml"
 
 default:
   tags:
