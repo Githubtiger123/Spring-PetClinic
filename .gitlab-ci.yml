@@ -100,15 +100,27 @@ deploy-app:
   script:
     # KUBE_CONFIG 支持两种形式：变量类型选 File（值是文件路径）或变量类型 Variable（值是 base64）
     - |
-      if [ -f "$KUBE_CONFIG" ]; then
+      if [ -z "$KUBE_CONFIG" ]; then
+        echo "KUBE_CONFIG 变量为空，请在 设置-CI/CD-变量 中添加"; exit 1
+      elif [ -f "$KUBE_CONFIG" ]; then
         export KUBECONFIG="$KUBE_CONFIG"
-        echo "using kubeconfig file: $KUBECONFIG"
-      else
+        echo "kubeconfig: 使用 File 类型变量"
+      elif printf '%s' "$KUBE_CONFIG" | grep -q 'apiVersion:'; then
         mkdir -p ~/.kube
-        printf '%s' "$KUBE_CONFIG" | tr -d '\r\n' | base64 -d > ~/.kube/config
+        printf '%s\n' "$KUBE_CONFIG" > ~/.kube/config
         export KUBECONFIG=~/.kube/config
         chmod 600 ~/.kube/config
-        echo "using decoded kubeconfig: $KUBECONFIG"
+        echo "kubeconfig: 使用明文 YAML 变量"
+      else
+        B64=$(printf '%s' "$KUBE_CONFIG" | tr -d '\r\n ')
+        if [ $(( ${#B64} % 4 )) -ne 0 ]; then
+          echo "KUBE_CONFIG 既不是文件、不是明文 YAML、也不是完整 base64（长度 ${#B64}）"; exit 1
+        fi
+        mkdir -p ~/.kube
+        printf '%s' "$B64" | base64 -d > ~/.kube/config
+        export KUBECONFIG=~/.kube/config
+        chmod 600 ~/.kube/config
+        echo "kubeconfig: 使用 base64 变量解码"
       fi
     - kubectl config get-contexts
     - kubectl version --client
